@@ -3,7 +3,7 @@ import csv
 import time
 import os
 from unittest.mock import MagicMock, patch, mock_open
-from exam import OrderProcessingService, Order, APIResponse, DatabaseService, APIClient, APIException, DatabaseException
+from exam import OrderProcessingService, Order, APIResponse, DatabaseService, APIClient, APIException, DatabaseException, OrderStatus, OrderPriority, APIStatus
 
 
 @pytest.fixture
@@ -246,7 +246,7 @@ def test_should_set_status_to_unknown_type_when_order_type_is_invalid(service):
     service._process_order_by_type(order, csv_file)
     
     # Assert
-    assert order.status == 'unknown_type'
+    assert order.status == OrderStatus.UNKNOWN_TYPE
 
 
 # Type A Order Processing Tests
@@ -261,7 +261,7 @@ def test_should_set_status_to_exported_when_type_a_order_processed_successfully(
         service._process_type_a_order(order, csv_file)
     
     # Assert
-    assert order.status == 'exported'
+    assert order.status == OrderStatus.EXPORTED
 
 
 def test_should_add_high_value_note_when_type_a_order_amount_exceeds_150(service):
@@ -289,7 +289,7 @@ def test_should_set_status_to_export_failed_when_io_error_occurs(service):
         service._process_type_a_order(order, csv_file)
     
     # Assert
-    assert order.status == 'export_failed'
+    assert order.status == OrderStatus.EXPORT_FAILED
 
 
 # Type B Order Processing Tests
@@ -297,65 +297,65 @@ def test_should_set_status_to_export_failed_when_io_error_occurs(service):
 def test_should_set_status_to_processed_when_api_data_ge_50_and_amount_lt_100(service, api_client):
     # Arrange
     order = Order(1, 'B', 80.0, False)
-    api_client.call_api.return_value = APIResponse('success', 60)
+    api_client.call_api.return_value = APIResponse(APIStatus.SUCCESS, 60)
     
     # Act
     service._process_type_b_order(order)
     
     # Assert
-    assert order.status == 'processed'
+    assert order.status == OrderStatus.PROCESSED
     api_client.call_api.assert_called_once_with(1)
 
 
 def test_should_set_status_to_pending_when_api_data_lt_50(service, api_client):
     # Arrange
     order = Order(1, 'B', 80.0, False)
-    api_client.call_api.return_value = APIResponse('success', 40)
+    api_client.call_api.return_value = APIResponse(APIStatus.SUCCESS, 40)
     
     # Act
     service._process_type_b_order(order)
     
     # Assert
-    assert order.status == 'pending'
+    assert order.status == OrderStatus.PENDING
     api_client.call_api.assert_called_once_with(1)
 
 
 def test_should_set_status_to_pending_when_flag_is_true(service, api_client):
     # Arrange
     order = Order(1, 'B', 180.0, True)
-    api_client.call_api.return_value = APIResponse('success', 160)
+    api_client.call_api.return_value = APIResponse(APIStatus.SUCCESS, 160)
     
     # Act
     service._process_type_b_order(order)
     
     # Assert
-    assert order.status == 'pending'
+    assert order.status == OrderStatus.PENDING
     api_client.call_api.assert_called_once_with(1)
 
 
 def test_should_set_status_to_error_when_api_data_gt_50_and_amount_gt_100_and_flag_is_false(service, api_client):
     # Arrange
     order = Order(1, 'B', 180.0, False)
-    api_client.call_api.return_value = APIResponse('success', 60)
+    api_client.call_api.return_value = APIResponse(APIStatus.SUCCESS, 60)
     
     # Act
     service._process_type_b_order(order)
     
     # Assert
-    assert order.status == 'error'
+    assert order.status == OrderStatus.ERROR
     api_client.call_api.assert_called_once_with(1)
 
 
 def test_should_set_status_to_api_error_when_api_status_is_not_success(service, api_client):
     # Arrange
     order = Order(1, 'B', 80.0, False)
-    api_client.call_api.return_value = APIResponse('error', 60)
+    api_client.call_api.return_value = APIResponse(APIStatus.ERROR, 60)
     
     # Act
     service._process_type_b_order(order)
     
     # Assert
-    assert order.status == 'api_error'
+    assert order.status == OrderStatus.API_ERROR
     api_client.call_api.assert_called_once_with(1)
 
 
@@ -368,7 +368,7 @@ def test_should_set_status_to_api_failure_when_api_exception_occurs(service, api
     service._process_type_b_order(order)
     
     # Assert
-    assert order.status == 'api_failure'
+    assert order.status == OrderStatus.API_FAILURE
     api_client.call_api.assert_called_once_with(1)
 
 
@@ -382,7 +382,7 @@ def test_should_set_status_to_completed_when_flag_is_true(service):
     service._process_type_c_order(order)
     
     # Assert
-    assert order.status == 'completed'
+    assert order.status == OrderStatus.COMPLETED
 
 
 def test_should_set_status_to_in_progress_when_flag_is_false(service):
@@ -393,7 +393,7 @@ def test_should_set_status_to_in_progress_when_flag_is_false(service):
     service._process_type_c_order(order)
     
     # Assert
-    assert order.status == 'in_progress'
+    assert order.status == OrderStatus.IN_PROGRESS
 
 
 # Priority Update Tests
@@ -406,7 +406,7 @@ def test_should_set_priority_to_high_when_amount_gt_200(service):
     service._update_order_priority(order)
     
     # Assert
-    assert order.priority == 'high'
+    assert order.priority == OrderPriority.HIGH
 
 
 def test_should_set_priority_to_low_when_amount_le_200(service):
@@ -417,7 +417,7 @@ def test_should_set_priority_to_low_when_amount_le_200(service):
     service._update_order_priority(order)
     
     # Assert
-    assert order.priority == 'low'
+    assert order.priority == OrderPriority.LOW
 
 
 # Status Save Tests
@@ -425,40 +425,40 @@ def test_should_set_priority_to_low_when_amount_le_200(service):
 def test_should_save_order_status_successfully(service, db_service):
     # Arrange
     order = Order(1, 'A', 100.0, False)
-    order.status = 'exported'
-    order.priority = 'high'
+    order.status = OrderStatus.EXPORTED
+    order.priority = OrderPriority.HIGH
     
     # Act
     service._save_order_status(order)
     
     # Assert
-    db_service.update_order_status.assert_called_once_with(1, 'exported', 'high')
+    db_service.update_order_status.assert_called_once_with(1, OrderStatus.EXPORTED, OrderPriority.HIGH)
 
 
 def test_should_set_status_to_db_error_when_database_exception_occurs(service, db_service):
     # Arrange
     order = Order(1, 'A', 100.0, False)
-    order.status = 'exported'
-    order.priority = 'high'
+    order.status = OrderStatus.EXPORTED
+    order.priority = OrderPriority.HIGH
     db_service.update_order_status.side_effect = DatabaseException("Test DB exception")
     
     # Act
     service._save_order_status(order)
     
     # Assert
-    assert order.status == 'db_error'
-    db_service.update_order_status.assert_called_once_with(1, 'exported', 'high')
+    assert order.status == OrderStatus.DB_ERROR
+    db_service.update_order_status.assert_called_once_with(1, OrderStatus.EXPORTED, OrderPriority.HIGH)
 
 def test_should_set_status_to_error_when_order_status_is_error(service, db_service):
     # Arrange
     order = Order(1, 'B', 80.0, False)
-    order.status = 'error'
+    order.status = OrderStatus.ERROR
     
     # Act
     service._save_order_status(order)
     
     # Assert
-    db_service.update_order_status.assert_called_once_with(1, 'error', 'low')
+    db_service.update_order_status.assert_called_once_with(1, OrderStatus.ERROR, OrderPriority.LOW)
 
 
 # Integration Tests
@@ -472,7 +472,7 @@ def test_should_process_all_order_types_correctly_in_full_flow(service, db_servi
         Order(3, 'C', 250.0, False)
     ]
     db_service.get_orders_by_user.return_value = orders
-    api_client.call_api.return_value = APIResponse('success', 60)
+    api_client.call_api.return_value = APIResponse(APIStatus.SUCCESS, 60)
     
     # Act
     with patch('builtins.open', mock_open()):
@@ -483,12 +483,12 @@ def test_should_process_all_order_types_correctly_in_full_flow(service, db_servi
     db_service.get_orders_by_user.assert_called_once_with(user_id)
     assert db_service.update_order_status.call_count == 3
     api_client.call_api.assert_called_once_with(2)
-    assert orders[0].status == 'exported'
-    assert orders[1].status == 'pending'
-    assert orders[2].status == 'in_progress'
-    assert orders[0].priority == 'low'
-    assert orders[1].priority == 'low'
-    assert orders[2].priority == 'high'
+    assert orders[0].status == OrderStatus.EXPORTED
+    assert orders[1].status == OrderStatus.PENDING
+    assert orders[2].status == OrderStatus.IN_PROGRESS
+    assert orders[0].priority == OrderPriority.LOW
+    assert orders[1].priority == OrderPriority.LOW
+    assert orders[2].priority == OrderPriority.HIGH
 
 
 def test_should_handle_all_exceptions_in_full_flow(service, db_service, api_client):
@@ -508,7 +508,7 @@ def test_should_handle_all_exceptions_in_full_flow(service, db_service, api_clie
     
     # Assert
     assert result is True  # Main process should still return True
-    assert orders[1].status == 'api_failure'  # B order should have api_failure status
+    assert orders[1].status == OrderStatus.API_FAILURE  # B order should have api_failure status
 
 
 # Edge Cases
@@ -523,7 +523,7 @@ def test_should_process_orders_with_mixed_types_correctly(service, db_service, a
         Order(4, 'D', 300.0, True)  # Unknown type
     ]
     db_service.get_orders_by_user.return_value = orders
-    api_client.call_api.return_value = APIResponse('success', 60)
+    api_client.call_api.return_value = APIResponse(APIStatus.SUCCESS, 60)
     
     # Act
     with patch('builtins.open', mock_open()):
@@ -531,10 +531,10 @@ def test_should_process_orders_with_mixed_types_correctly(service, db_service, a
     
     # Assert
     assert result is True
-    assert orders[0].status == 'exported'
-    assert orders[1].status == 'pending'
-    assert orders[2].status == 'in_progress'
-    assert orders[3].status == 'unknown_type'
+    assert orders[0].status == OrderStatus.EXPORTED
+    assert orders[1].status == OrderStatus.PENDING
+    assert orders[2].status == OrderStatus.IN_PROGRESS
+    assert orders[3].status == OrderStatus.UNKNOWN_TYPE
 
 
 def test_should_process_orders_with_extreme_values_correctly(service, db_service):
@@ -553,6 +553,6 @@ def test_should_process_orders_with_extreme_values_correctly(service, db_service
     
     # Assert
     assert result is True
-    assert orders[0].priority == 'low'
-    assert orders[1].priority == 'high'
-    assert orders[2].priority == 'high' 
+    assert orders[0].priority == OrderPriority.LOW
+    assert orders[1].priority == OrderPriority.HIGH
+    assert orders[2].priority == OrderPriority.HIGH 
